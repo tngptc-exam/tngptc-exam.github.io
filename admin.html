@@ -1,0 +1,158 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Admin | TNGPTC Exam Portal</title>
+<style>
+:root{--bg:#eef1f6;--card:#fff;--text:#14213d;--muted:#5b6578;--line:#d3d9e4;--brand:#12263f;--bt:#fff;--err:#b3261e;--ok:#1b6b3a;color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media(prefers-color-scheme:dark){:root{--bg:#0d1420;--card:#16202f;--text:#e8edf5;--muted:#9aa6ba;--line:#2a374b;--brand:#e8edf5;--bt:#12263f;--err:#ff8a80;--ok:#6fd28f;color-scheme:dark}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,"Segoe UI",Arial,sans-serif;line-height:1.5}
+header{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:12px 16px;background:var(--brand);color:var(--bt)}
+header b{font-size:17px}header button{background:none;border:1px solid currentColor;color:inherit;border-radius:8px;padding:6px 12px;font:inherit;cursor:pointer}
+main{max-width:720px;margin:0 auto;padding:16px}
+.tabs{display:flex;gap:8px;margin-bottom:14px}
+.tab{flex:1;padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--text);font:inherit;font-weight:600;cursor:pointer}
+.tab.on{background:var(--brand);color:var(--bt)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:14px}
+h2{margin:0 0 10px;font-size:18px}label{display:block;font-size:14px;font-weight:600;margin:10px 0 4px}
+input{width:100%;font:inherit;color:var(--text);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px}
+.btn{margin-top:12px;padding:10px 16px;border:0;border-radius:8px;background:var(--brand);color:var(--bt);font:inherit;font-weight:600;cursor:pointer}
+.btn:disabled{opacity:.5}.sm{margin:0;padding:6px 10px;font-size:13px}
+.item{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 0;border-top:1px solid var(--line)}
+.item small{color:var(--muted);display:block}
+#msg{position:sticky;top:0;z-index:5;margin-bottom:10px;padding:10px 12px;border-radius:8px;font-weight:600;background:var(--card);border:1px solid var(--line)}
+.e{color:var(--err)}.o{color:var(--ok)}
+.bgrp{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}.off{opacity:.65}.dept .item:first-child{border-top:0;padding-top:0}
+.dept .item input{flex:1;min-width:0}
+header a.hl,#hd a.hl{color:#fff;background:rgba(255,255,255,.1);border:1px solid rgba(251,191,36,.7);border-radius:10px;padding:7px 14px;text-decoration:none;font:inherit;font-weight:600;cursor:pointer}
+</style><script src="theme.js"></script></head><body hidden>
+<header><b>TNGPTC Admin</b><span id="who"></span><a href="home.html" class="hl">Home</a><button id="out" type="button">Log out</button></header>
+<main>
+<div id="msg" hidden></div>
+<div class="tabs"><button class="tab on" id="t-teacher" type="button">Teachers</button><button class="tab" id="t-student" type="button">Students</button><button class="tab" id="t-class" type="button">Classes</button></div>
+<form class="card" id="f-new" novalidate>
+<h2>Create teacher account</h2>
+<label for="n-id">Teacher ID</label><input id="n-id" autocomplete="off">
+<label for="n-name">Teacher name</label><input id="n-name" autocomplete="off">
+<label for="n-pw">Password (min 8)</label><input id="n-pw" autocomplete="off">
+<button class="btn" type="submit">Create teacher</button>
+</form>
+<div class="card" id="c-list"><h2 id="lt">Teachers</h2>
+<input id="q" placeholder="Search name or ID" autocomplete="off">
+<div id="list"></div></div>
+<div id="v-class" hidden>
+<form class="card" id="f-dept" novalidate><h2>Add department</h2>
+<label for="d-name">Department name (ex: Mechanical)</label><input id="d-name" autocomplete="off">
+<button class="btn" type="submit">Add department</button>
+<small style="display:block;margin-top:8px;color:var(--muted)">After adding, add its sections (A, B, C...). Sections are the same for every batch. Students pick Year + Department + Section when they register.</small></form>
+<div id="org"></div></div>
+</main>
+<script src="config.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.58.0/dist/umd/supabase.js"></script>
+<script>
+(function(){
+var $=function(i){return document.getElementById(i)};
+var sb=TNG.client();
+var rows=[],tab="teacher";
+function msg(t,ok){var m=$("msg");m.textContent=t;m.className=ok?"o":"e";m.hidden=false;setTimeout(function(){m.hidden=true},6000)}
+function clean(e){return(e&&e.message||"Failed").replace(/^.*exception:\s*/i,"")}
+async function load(){
+ var all=[],from=0;
+ while(true){
+  var r=await sb.from("profiles").select("roll_no,full_name,role,section,phone").neq("role","admin").order("roll_no").range(from,from+999);
+  if(r.error){msg(clean(r.error),false);return}
+  all=all.concat(r.data);if(r.data.length<1000)break;from+=1000;
+ }
+ rows=all;render();
+}
+function render(){
+ var q=$("q").value.trim().toLowerCase(),box=$("list");box.textContent="";
+ var list=rows.filter(function(x){return x.role===tab&&(!q||(x.full_name||"").toLowerCase().indexOf(q)>-1||(x.roll_no||"").toLowerCase().indexOf(q)>-1)});
+ $("lt").textContent=(tab==="teacher"?"Teachers":"Students")+" ("+list.length+")";
+ if(!list.length){box.textContent="No accounts found.";return}
+ list.slice(0,100).forEach(function(x){
+  var d=document.createElement("div");d.className="item";
+  var s=document.createElement("div");s.textContent=x.full_name||"-";
+  var sm=document.createElement("small");sm.textContent=x.roll_no+(x.section?" | Section "+x.section:"")+(x.phone?" | "+x.phone:"");s.appendChild(sm);
+  var b=document.createElement("button");b.className="btn sm";b.type="button";b.textContent="Reset password";
+  b.onclick=function(){reset(x.roll_no)};
+  d.appendChild(s);d.appendChild(b);box.appendChild(d);
+ });
+ if(list.length>100){var n=document.createElement("small");n.textContent="Showing first 100. Use search to find others.";box.appendChild(n)}
+}
+async function reset(id){
+ var pw=prompt("New password for "+id+" (min 8 characters)");
+ if(pw===null)return;
+ if(pw.length<TNG.MIN_PW){msg("Password must be at least 8 characters",false);return}
+ var r=await sb.rpc("admin_reset_password",{p_id:id,p_password:pw});
+ if(r.error)msg(clean(r.error),false);else msg("Password changed for "+id,true);
+}
+function setTab(t){tab=t;$("t-teacher").className="tab"+(t==="teacher"?" on":"");$("t-student").className="tab"+(t==="student"?" on":"");$("t-class").className="tab"+(t==="class"?" on":"");
+ $("f-new").hidden=(t!=="teacher");$("c-list").hidden=(t==="class");$("v-class").hidden=(t!=="class");
+ if(t==="class")loadOrg();else render()}
+var org=null;
+function mk(text,fn){var b=document.createElement("button");b.className="btn sm";b.type="button";b.textContent=text;b.onclick=fn;return b}
+function dupMsg(e){return /duplicate|already|unique/i.test((e&&e.message)||"")?"This name already exists":clean(e)}
+async function loadOrg(){var r=await sb.rpc("admin_org_list");if(r.error){msg(clean(r.error),false);return}org=r.data;drawOrg()}
+function drawOrg(){
+ var box=$("org");box.textContent="";
+ var ds=(org&&org.departments)||[];
+ if(!ds.length){box.textContent="No departments yet. Add one above.";return}
+ ds.forEach(function(d){
+  var c=document.createElement("div");c.className="card dept"+(d.active?"":" off");
+  var h=document.createElement("div");h.className="item";
+  var t=document.createElement("div");t.textContent=d.name;t.style.fontWeight="700";
+  var sm=document.createElement("small");sm.textContent=(d.active?"Active":"Archived")+" | "+d.sections.length+" sections";t.appendChild(sm);
+  var g=document.createElement("div");g.className="bgrp";
+  g.appendChild(mk("Rename",function(){renameDept(d)}));
+  g.appendChild(mk(d.active?"Archive":"Activate",function(){saveDept(d.id,d.name,!d.active)}));
+  h.appendChild(t);h.appendChild(g);c.appendChild(h);
+  d.sections.forEach(function(s){
+   var r=document.createElement("div");r.className="item"+(s.active?"":" off");
+   var st=document.createElement("div");st.textContent="Section "+s.name;
+   var sm2=document.createElement("small");sm2.textContent=(s.active?"Active":"Archived")+" | "+s.students+" students";st.appendChild(sm2);
+   var g2=document.createElement("div");g2.className="bgrp";
+   g2.appendChild(mk("Rename",function(){renameSec(s)}));
+   g2.appendChild(mk(s.active?"Archive":"Activate",function(){saveSec(s.id,s.name,!s.active)}));
+   r.appendChild(st);r.appendChild(g2);c.appendChild(r)});
+  var ar=document.createElement("div");ar.className="item";
+  var inp=document.createElement("input");inp.placeholder="Add sections: A, B, C";inp.autocomplete="off";
+  var ab=mk("Add",function(){addSecs(d.id,inp)});ab.style.flex="none";
+  ar.appendChild(inp);ar.appendChild(ab);c.appendChild(ar);
+  box.appendChild(c)});
+}
+async function saveDept(id,name,active){var r=await sb.rpc("admin_dept_save",{p_id:id,p_name:name,p_active:active});if(r.error){msg(dupMsg(r.error),false);return}msg("Saved",true);loadOrg()}
+function renameDept(d){var n=prompt("Department name",d.name);if(n===null)return;n=n.trim();if(!n||n===d.name)return;saveDept(d.id,n,d.active)}
+async function saveSec(id,name,active){var r=await sb.rpc("admin_section_save",{p_id:id,p_name:name,p_active:active});if(r.error){msg(dupMsg(r.error),false);return}msg("Saved",true);loadOrg()}
+function renameSec(s){var n=prompt("Section name",s.name);if(n===null)return;n=n.trim();if(!n||n===s.name)return;saveSec(s.id,n,s.active)}
+async function addSecs(dept,inp){var v=inp.value.trim();if(!v){msg("Type section names, ex: A, B, C",false);return}
+ var r=await sb.rpc("admin_sections_add",{p_dept:dept,p_names:v});if(r.error){msg(dupMsg(r.error),false);return}
+ msg(r.data+" section(s) added",true);loadOrg()}
+$("f-dept").onsubmit=async function(e){e.preventDefault();var n=$("d-name").value.trim();if(!n){msg("Enter department name",false);return}
+ var b=e.target.querySelector("button");b.disabled=true;
+ var r=await sb.rpc("admin_dept_save",{p_id:null,p_name:n,p_active:true});b.disabled=false;
+ if(r.error){msg(dupMsg(r.error),false);return}
+ e.target.reset();msg("Department added. Now add its sections.",true);loadOrg()};
+$("t-teacher").onclick=function(){setTab("teacher")};$("t-student").onclick=function(){setTab("student")};$("t-class").onclick=function(){setTab("class")};
+$("q").oninput=render;
+$("f-new").onsubmit=async function(e){
+ e.preventDefault();
+ var id=$("n-id").value.trim(),nm=$("n-name").value.trim(),pw=$("n-pw").value;
+ if(!/^[A-Za-z0-9._-]{2,30}$/.test(id)){msg("Teacher ID: letters, numbers, dot or dash only",false);return}
+ if(!nm){msg("Enter teacher name",false);return}
+ if(pw.length<TNG.MIN_PW){msg("Password must be at least 8 characters",false);return}
+ var b=e.target.querySelector("button");b.disabled=true;
+ var r=await sb.rpc("admin_create_user",{p_id:id,p_password:pw,p_role:"teacher",p_name:nm});
+ b.disabled=false;
+ if(r.error){msg(/duplicate|already/i.test(r.error.message)?"This ID already exists":clean(r.error),false);return}
+ e.target.reset();msg("Teacher "+id+" created",true);load();
+};
+$("out").onclick=async function(){await sb.auth.signOut();location.href="index.html"};
+(async function(){
+ var s=(await sb.auth.getSession()).data.session;
+ if(!s){location.href="index.html";return}
+ var pr=await sb.from("profiles").select("role,full_name").eq("id",s.user.id).single(),p=pr.data;if(!p&&TNG.netErr(pr.error)){TNG.fail();return}
+ if(!p||p.role!=="admin"){location.href="index.html";return}
+ $("who").textContent=p.full_name||"Admin";document.body.hidden=false;load();
+ if(location.hash==="#student")setTab("student");else if(location.hash==="#class")setTab("class");
+})();
+})();
+</script></body></html>
